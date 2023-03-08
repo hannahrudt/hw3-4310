@@ -1,0 +1,86 @@
+.outline {
+    stroke-width: 1px;
+    fill: none;
+    stroke: black;
+}
+
+/*#map {*/
+/*    border: 3px solid black;*/
+/*    margin-right: 10px;*/
+/*}*/
+
+h1, p, h2, h4, h3 {
+    font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
+}
+
+h1, p {
+    padding-left: 15px;
+}
+
+.align-center {
+    display: flex;
+  justify-content: center;
+}
+.list {
+    max-height: 600px;
+    overflow-y: scroll;
+    max-width: 600px;
+    margin: 20px auto;
+    /* margin: 20px auto; */
+    /* max-width: 600px;
+    ; */
+}
+
+
+.restaurantEntry {
+    display: flex;
+    align-items: center;
+}
+
+.restaurantName {
+    margin-right: 10px;
+    font-weight: bold;
+}
+
+.starRatings {
+    font-size: 18px;
+    color: #FFD700;
+    display: flex;
+    align-items: center;
+}
+
+.fullStar {
+    margin-right: 2px;
+}
+
+.halfStar {
+    margin-right: 2px;
+    font-size: 16px;
+}
+
+#selected {
+    margin: 5px;
+    padding: 5px;
+}
+
+.categoryButton:hover, .neighborhoodButton:hover {
+    background-color: #70add2;
+}
+
+/* .categoryButton:focus, .neighborhoodButton:focus {
+    background-color: #70add2;
+} */
+
+.starButton {
+    background-color: transparent;
+    border: none;
+    color: gold;
+}
+
+.starButton:hover {
+    background-color: #70add2;
+}
+
+.star {
+    color: gold;
+}

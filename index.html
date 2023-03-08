@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css"/>
+    <link rel="stylesheet" type="text/css" href="style.css"/>
+    <link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://d3js.org/topojson.v3.min.js"></script>
+    <title>HW 3: Pittsburgh Yelp </title>
+</head>
+<body>
+<h1>Where to Eat in Pittsburgh</h1>
+<p>Select an area to explore, double click or esc to reset.</p>
+
+<div class="col-sm-2 col-md-2">
+    <div class="neighborhoodKey"><h4>Neighborhoods</h4></div>
+    <div class="categoryKey"><h4>Restaurant Type</h4></div>
+    <div class="starKey"><h4>Star Rating</h4></div>
+</div>
+<div class="col-sm-10 col-md-8  align-center">
+    <svg id="map" height="700" width="700"></svg>
+</div>
+
+<div class="col-md-2">
+    <h4>Selected Restaurants</h4>
+    <div class="list">
+</div>
+
+
+</body>
+<script>
+    // HELPER FUNCTIONS: https://linuxhint.com/remove-all-elements-with-specific-class-using-javascript/
+    function removeElements(className) {
+        let cn = document.querySelectorAll(className);
+        cn.forEach(d => {
+            d.remove();
+        });
+    }
+    function removeFromList(list, element) {
+        list.splice(list.indexOf(element), 1);
+    }
+
+    // ==== CREATING MAP & MAP AREA ==== 
+    const map = d3.select("svg#map");
+
+    const margin = {top: 20, right: 20, bottom: 20, left: 20};
+    const width = map.attr("width");
+    const height = map.attr("height");
+
+    const mapWidth = width - margin.right - margin.left;
+    const mapHeight = height - margin.top - margin.bottom;
+
+    // Create mapArea with translated margins
+    let mapArea = map.append("g")
+        .attr("id", "lines")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    
+    const findPittsburgh = async function () {
+        // ======== BRING IN JSON & IT'S INFO ======
+        const pittsJson = await d3.json("./data/pittsburgh_neighborhoods.json");
+        console.log(pittsJson);
+        const neighborhoods = topojson.feature(pittsJson, pittsJson.objects['Neighborhoods_']);
+        const neighborhoodsMesh = topojson.mesh(pittsJson, pittsJson.objects['Neighborhoods_']);
+        const projection = d3.geoMercator()
+            .fitSize([mapWidth, mapHeight], neighborhoods);
+        const path = d3.geoPath().projection(projection);
+
+        // ==== BASE FILTERING OF YELP DATA (FOOD & NEIGHBORHOOD IN JSON) ====
+        const yelpData = await d3.csv("./data/yelp_pittsburgh.csv", d3.autoType);
+        let restaurants = yelpData.filter(function (d) {
+            return d['type'] == "food"; // only include restaurants
+        });
+        
+        let uniqueDataNeighborhoods = [...new Set(restaurants.map(function (d) { return d.neighborhood; }))];
+        let jsonHoods = [];
+        neighborhoods.features.forEach((feature) => { jsonHoods.push(feature.properties.hood);  });
+        let neighList = jsonHoods.filter(x => uniqueDataNeighborhoods.includes(x)).sort(); // list of neighborhoods on the JSON & we have info on 
+        
+        // only include points that are in shown neighborhoods
+        restaurants = restaurants.filter(function (d) {
+            return neighList.includes(d['neighborhood']); 
+        });
+        console.log(restaurants);
+
+        // ========= FILTERING FUNCTIONALITY (BEFORE USE) =========== 
+        // no filters in the beginning 
+        let neighborhood_filters = [];
+        let rating_filters = [];
+        let category_filters = [];
+
+        // Updates filter arrays when clicked
+        function addFilter(filterList, entry) {
+            if (filterList.includes(entry)) {
+                removeFromList(filterList, entry);  // if already  clicked, delete it from the list of filters
+            } else {
+                filterList.push(entry); 
+            }
+        }
+        
+        // FILTER FUNCTION
+        function filterAll(rating_filters, category_filters, neighborhood_filters)  {
+            console.log("Rating Filters:",rating_filters, 
+                "Category Filters:",category_filters, 
+                "Neighborhood Filters:", neighborhood_filters);
+            if(category_filters.length == 0  && rating_filters.length == 0  && neighborhood_filters.length == 0) { // no filters
+                return restaurants
+            } else {
+                return restaurants.filter(function (d) {
+                    if(brushStatus) { // brush is used -> don't filter based on neighborhood
+                        console.log("brush is active");
+                        if(category_filters.length == 0 ) {                             // no category filter -> only filter rating.
+                            return rating_filters.includes(d['rating']);
+                        } else if(rating_filters.length == 0 ) {          //no rating filter -> only filter category
+                            return category_filters.includes(d['category']);
+                        } else {
+                            return rating_filters.includes(d['rating']) 
+                            && category_filters.includes(d['category']); //both filters active so return both;
+                        }
+                    } else { // brush is inactive -> use neighborhood filter
+                        if(category_filters.length == 0 && rating_filters.length == 0) { // no rating AND category filters
+                            return neighborhood_filters.includes(d['neighborhood']);
+                        } else if(category_filters.length == 0 ) {                       // no category filter -> only filter rating.
+                            return rating_filters.includes(d['rating']);
+                        } else if(rating_filters.length == 0 ) {                         // no rating filter -> only filter category
+                            return category_filters.includes(d['category']);
+                        } else {
+                            return rating_filters.includes(d['rating']) 
+                                && category_filters.includes(d['category']) 
+                                && neighborhood_filters.includes(d['neighborhood']);
+                        }
+                    }
+                });
+            }
+        }
+
+        // ========= CREATE MAP =======
+        // Fill in the map 
+        map.selectAll("path.neighborhoods")
+            .data(neighborhoods.features)
+            .join("path")
+            .attr("class", "neighborhoods")
+            .attr("d", path)
+            .attr("fill", "rgb(240, 240, 250)");
+
+        // Create the outline of the path on the map
+        map.append("path")
+            .datum(neighborhoodsMesh)
+            .attr("class", "outline")
+            .attr("d", path);
+
+        // ======= ADD POINTS (FUNCTION)=======
+        // Adds points depending on newly filtered data
+        function addPoints() {
+            removeElements(".restaurantPoints"); // delete existing points 
+            
+            // Filters data based on applied filters
+            let restaurants = filterAll(rating_filters, category_filters, neighborhood_filters);
+            console.log(restaurants);
+            
+            // Calculate Coordinates
+            restaurants.forEach(d => {
+                d.js_pos = projection([d.longitude, d.latitude]);
+            });
+            // add circles to map
+            return map.selectAll("restaurantCircles").data(restaurants)
+                .join("circle")
+                .attr("r", 2)
+                .attr("fill", "#cc4778")
+                .attr("opacity", 0.7)
+                .attr("cx", d => d.js_pos[0])
+                .attr("cy", d => d.js_pos[1])
+                .attr("id", d => d["name"])
+                .attr("class", "restaurantPoints");
+        }
+
+        let circles = addPoints(); // adds points with original dataset (we run this function again when the data changes)
+
+        // ============ KEYS ============
+        // Category Key
+        let uniqueCat = [...new Set(restaurants.map(function (d) {
+            return d.category
+        }))].sort(); // unique list of categories
+
+        uniqueCat.forEach(d => {
+            d3.select(".categoryKey")
+                .append("button")
+                .attr("class", "categoryButton")
+                .text(d.charAt(0).toUpperCase() + d.slice(1))
+                .on("click", function () {
+                    //subsetCategory(d);
+                    addFilter(category_filters, d);
+                    circles = addPoints();
+                    d3.selectAll(".categoryButton");
+                })
+        });
+
+        // Neighborhood Key
+        neighList.forEach(d => {
+            d3.select(".neighborhoodKey")
+                .append("button")
+                .attr("class", "neighborhoodButton")
+                .text(d)
+                .on("click", function () {
+                    addFilter(neighborhood_filters, d);
+                    circles = addPoints();
+                    d3.selectAll(".neighborhoodButton")
+                })
+        });
+
+        // Star Rating Key
+        let uniqueRating = [...new Set(restaurants.map(function (d) {
+            return d.rating
+        }))].sort(); // unique list of neighborhoods
+
+        uniqueRating.forEach(d => {
+            if (Number.isInteger(d)) { // check if rating is a whole number
+                d3.select(".starKey")
+                    .append("button")
+                    .attr("class", "starButton")
+                    .html(`<i class="fas fa-star"></i>`.repeat(d))
+                    .on("click", function () {
+                        addFilter(rating_filters, d);
+                        circles = addPoints();
+                        d3.selectAll(".starButton")
+                    })
+            } else { // rating has half star
+                let wholeStar = Math.floor(d);
+                d3.select(".starKey")
+                    .append("button")
+                    .attr("class", "starButton")
+                    .html(`<i class="fas fa-star"></i>`.repeat(wholeStar) + `<i class="fas fa-star-half-alt"></i>`)
+                    .on("click", function () {
+                        addFilter(rating_filters, d);
+                        circles = addPoints();
+                        d3.selectAll(".starButton")
+                    })
+            }
+        });
+
+        
+        // ============ BRUSH ============
+        let surface = map.append("g").raise()
+            .style("pointer-events", "all"); 
+
+        // Empty pixels for mouse event                                       
+        surface.append("rect")
+            .attr("x1", 0)
+            .attr("y1", 0)
+            .attr("width", mapWidth)
+            .attr("height", mapHeight)
+            .attr("fill", "none");
+
+        surface.call(d3.brush().on("start", brushStart).on("brush", brushed));
+
+        // variable to track if brush is applied
+        let brushStatus = false;
+
+        function brushStart(event) {
+            circles.attr("fill", "#cc4778")
+            brushStatus = true;
+            neighborhood_filters = []; // deletes all neighborhood filters from buttons
+        }
+
+        const list = d3.select(".list");
+
+        // ======= UPDATE LIST OF RESTAURANTS ===== 
+        function updateList() {
+            const list = d3.select(".list");
+            const [x0, y0] = d3.brushSelection(surface.node())[0];
+            const [x1, y1] = d3.brushSelection(surface.node())[1];
+            const subset = restaurants.filter(d => {
+                const [x, y] = d.js_pos;
+                return (x > x0 && x < x1) && (y > y0 && y < y1);
+            });
+            list.selectAll("div").remove();
+            list.selectAll("div")
+                .data(subset)
+                .enter()
+                .append("div")
+                .attr("class", "restaurant")
+                .html(d => {
+                    let stars = "";
+                    for (let i = 0; i < Math.floor(d.rating); i++) {
+                        stars += '<i class="fas fa-star star"></i>';
+                    }
+                    if (d.rating % 1 >= 0.5) {
+                        stars += '<i class="fas fa-star-half-alt star"></i>';
+                    }
+                    return `
+                        <div class="restaurantName">${d.name}</div>
+                        <div class="restaurantLocation">${d.neighborhood}</div>
+                        <div class="restaurantStars">${stars}</div>
+                      `;
+                });
+        }
+
+
+        // ====== STYLING OF POINTS ONCE BRUSHED  & UNBRUSHED ===== 
+        function brushed({selection: [[x0, y0], [x1, y1]]}) {
+            let escapeKeyListener = function (event) {
+                if (event.key === "Escape") {
+                    surface.call(d3.brush().move, null)
+                    brushStatus = false;
+                    circles
+                        .transition()
+                        .duration(500)
+                        .attr("r", 2)
+                        .attr("fill", "#cc4778");
+                    list.selectAll("div").remove();
+                    document.removeEventListener("keydown", escapeKeyListener);
+                }
+            };
+            
+            let unclickListener = addEventListener("click", (event) => {
+                surface.call(d3.brush().move, null)
+                    brushStatus = false;
+                    circles
+                        .transition()
+                        .duration(500)
+                        .attr("r", 2)
+                        .attr("fill", "#cc4778");
+                    list.selectAll("div").remove();
+                    // document.removeEventListener("keydown", escapeKeyListener);
+            });
+
+            document.addEventListener("keydown", escapeKeyListener);
+            updateList();
+            list.append("text", d => {
+                let x = d.js_pos[0]
+                let y = d.js_pos[1]
+
+                if ((x > x0 && x < x1) && (y > y0 && y < y1)) {
+                    return d['name'];
+                } else {
+                    return ""
+                }
+                console.log(brushStatus);
+            });
+
+            circles
+                .transition()
+                .duration(500)
+                .attr("r", d => {
+                    let x = d.js_pos[0]
+                    let y = d.js_pos[1]
+
+                    if ((x > x0 && x < x1) && (y > y0 && y < y1)) {
+                        return 5;
+                    } else {
+                        return 2;
+                    }
+                })
+                .attr("fill", d => {
+                    let x = d.js_pos[0]
+                    let y = d.js_pos[1]
+
+                    if ((x > x0 && x < x1) && (y > y0 && y < y1)) {
+                        return "orange";
+                    } else {
+                        return "#cc4778";
+
+                    }
+                });
+        }
+
+    }
+    findPittsburgh();
+
+
+</script>
+</html>
